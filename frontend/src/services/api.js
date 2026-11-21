@@ -210,6 +210,108 @@ export async function sendChatMessage(message, language = 'en') {
 
   // Client-side grounded fallback for GitHub Pages static preview
   const qLower = message.toLowerCase()
+
+  // 1. PM-YASASVI Scheme
+  if (qLower.includes("yasasvi") || qLower.includes("obc") || qLower.includes("ebc") || qLower.includes("dnt")) {
+    return {
+      answer: "The PM Young Achievers Scholarship Award Scheme for Vibrant India (PM-YASASVI) provides financial support to OBC, EBC, and DNT students studying in Top Class Schools [Source: PM_YASASVI_Scholarship_Scheme_Guidelines.pdf, Page 1].\n\n• Annual family income ceiling: ₹2,50,000 per annum.\n• Class 9 & 10 students receive up to ₹75,000 per annum.\n• Class 11 & 12 students receive up to ₹1,25,000 per annum covering tuition & hostel fees.\n• Selection is through the YASASVI merit list on yet.nta.ac.in.",
+      citations: [{
+        document_name: "PM_YASASVI_Scholarship_Scheme_Guidelines.pdf",
+        page_number: 1,
+        scheme_name: "PM Young Achievers Scholarship Scheme (PM-YASASVI)",
+        source_url: "https://yet.nta.ac.in",
+        snippet: "Scholarships for OBC, EBC and DNT students in Top Class Schools with family income under ₹2.5 lakh."
+      }],
+      confidence: "high",
+      suggested_follow_ups: ["What is the income ceiling for PM-YASASVI?", "How do I check the Top Class School list?"],
+      retrieved_count: 5
+    }
+  }
+
+  // 2. National Means-cum-Merit Scholarship Scheme (NMMSS)
+  if (qLower.includes("nmmss") || qLower.includes("means") || qLower.includes("merit")) {
+    return {
+      answer: "The National Means-cum-Merit Scholarship Scheme (NMMSS) awards scholarships to meritorious students of economically weaker sections to arrest dropouts at Class 8 [Source: National_Means_cum_Merit_Scholarship_NMMSS.pdf, Page 1].\n\n• Scholarship amount: ₹12,000 per annum (₹1,000/month) from Class 9 to Class 12.\n• Parental income ceiling: Not exceeding ₹3,50,000 per annum from all sources.\n• Eligibility: Minimum 55% marks in Class 7/8 exam and studying in a Government or local body school.",
+      citations: [{
+        document_name: "National_Means_cum_Merit_Scholarship_NMMSS.pdf",
+        page_number: 1,
+        scheme_name: "National Means-cum-Merit Scholarship Scheme (NMMSS)",
+        source_url: "https://scholarships.gov.in",
+        snippet: "₹12,000 per annum for students studying in Government/aided schools with family income below ₹3.5 lakh."
+      }],
+      confidence: "high",
+      suggested_follow_ups: ["What is the qualifying exam for NMMSS?", "What is the parental income limit?"],
+      retrieved_count: 5
+    }
+  }
+
+  // 3. Free-ship Card / Punjab Dr. Ambedkar Portal
+  if (qLower.includes("free-ship") || qLower.includes("freeship") || qLower.includes("ambedkar")) {
+    return {
+      answer: "A Free-ship Card is an official entitlement document issued to eligible SC students in Punjab for zero upfront tuition admission in recognized post-matric colleges [Source: Punjab_Post_Matric_Scholarship_SC_Guidelines.pdf, Page 1].\n\n• Issued via Dr. B.R. Ambedkar Scholarship Portal (scholarships.punjab.gov.in).\n• Requires Punjab domicile, valid SC caste certificate, and family income certificate below ₹2,50,000.\n• The college cannot charge admission, tuition, or examination fees to a valid Free-ship Card holder.",
+      citations: [{
+        document_name: "Punjab_Post_Matric_Scholarship_SC_Guidelines.pdf",
+        page_number: 1,
+        scheme_name: "Post Matric Scholarship Scheme for SC Students (Punjab)",
+        source_url: "https://scholarships.punjab.gov.in",
+        snippet: "Free-ship card grants 100% tuition waiver for eligible SC candidates at admission time."
+      }],
+      confidence: "high",
+      suggested_follow_ups: ["What documents are needed for Free-ship Card?", "What is the income ceiling in Punjab?"],
+      retrieved_count: 5
+    }
+  }
+
+  // 4. Application Process & Portals
+  if (qLower.includes("apply") || qLower.includes("portal") || qLower.includes("registration") || qLower.includes("how to") || qLower.includes("process")) {
+    return {
+      answer: "To apply for official Indian scholarships, applications must be submitted online through designated government portals [Source: PM_USP_Central_Sector_Scholarship_Guidelines.pdf, Page 2]:\n\n1. **National Scholarships (PM-USP CSSS & NMMSS)**: Apply at the National Scholarship Portal (scholarships.gov.in) using your Aadhaar number, bank account details, and academic marks.\n2. **Punjab Post-Matric SC**: Apply for your Free-ship Card on the Dr. B.R. Ambedkar Scholarship Portal (scholarships.punjab.gov.in).\n3. **PM-YASASVI**: Register through yet.nta.ac.in and verify school allocation.",
+      citations: [{
+        document_name: "PM_USP_Central_Sector_Scholarship_Guidelines.pdf",
+        page_number: 2,
+        scheme_name: "National Scholarship Portal Guidelines",
+        source_url: "https://scholarships.gov.in",
+        snippet: "Online application submission through National Scholarship Portal with Aadhaar authentication."
+      }],
+      confidence: "high",
+      suggested_follow_ups: ["What documents do I need to upload?", "What is the deadline for NSP registration?"],
+      retrieved_count: 5
+    }
+  }
+
+  // 5. Scholarship Amount & Rates
+  if (qLower.includes("amount") || qLower.includes("rate") || qLower.includes("how much") || qLower.includes("allowance") || qLower.includes("fee") || qLower.includes("₹")) {
+    if (qLower.includes("punjab") || qLower.includes("sc")) {
+      return {
+        answer: "Under the Punjab Post Matric Scholarship for SC Students, 100% of non-refundable tuition and university fees are reimbursed, plus a monthly maintenance allowance up to ₹13,500 per year depending on group of study [Source: Punjab_Post_Matric_Scholarship_SC_Guidelines.pdf, Page 2].",
+        citations: [{
+          document_name: "Punjab_Post_Matric_Scholarship_SC_Guidelines.pdf",
+          page_number: 2,
+          scheme_name: "Post Matric Scholarship Scheme for SC Students (Punjab)",
+          source_url: "https://scholarships.punjab.gov.in",
+          snippet: "100% fee waiver plus annual maintenance allowance up to ₹13,500."
+        }],
+        confidence: "high",
+        suggested_follow_ups: ["What is the income ceiling in Punjab?", "How do I apply for a Free-ship Card?"],
+        retrieved_count: 5
+      }
+    }
+    return {
+      answer: "Under the PM-USP Central Sector Scholarship, the rate of scholarship is ₹12,000 per annum for the first three years of Graduation, and ₹20,000 per annum for Post-Graduation [Source: PM_USP_Central_Sector_Scholarship_Guidelines.pdf, Page 2].",
+      citations: [{
+        document_name: "PM_USP_Central_Sector_Scholarship_Guidelines.pdf",
+        page_number: 2,
+        scheme_name: "PM-USP Central Sector Scheme of Scholarship",
+        source_url: "https://scholarships.gov.in",
+        snippet: "Rate of scholarship: ₹12,000/yr for Graduation; ₹20,000/yr for Post-Graduation."
+      }],
+      confidence: "high",
+      suggested_follow_ups: ["What is the percentile cutoff in Class 12?", "What is the parental income limit?"],
+      retrieved_count: 5
+    }
+  }
+
+  // 6. Income Limits
   if (qLower.includes("income") || qLower.includes("ceiling") || qLower.includes("limit") || qLower.includes("आय") || qLower.includes("ਆਮਦਨ")) {
     if (qLower.includes("punjab") || qLower.includes("sc")) {
       return {
@@ -241,6 +343,7 @@ export async function sendChatMessage(message, language = 'en') {
     }
   }
 
+  // 7. Documents Required
   if (qLower.includes("document") || qLower.includes("certificate") || qLower.includes("दस्तावेज") || qLower.includes("ਦਸਤਾਵੇਜ਼")) {
     return {
       answer: "The mandatory documents required for Punjab SC Post Matric Scholarship include a Domicile Certificate, SC Caste Certificate, Income Certificate (valid for current financial year), and a Free-ship Card [Source: Punjab_Post_Matric_Scholarship_SC_Guidelines.pdf, Page 1].\n\n• Punjab Resident / Domicile Certificate\n• SC Caste Certificate issued by Tehsildar / SDM\n• Income Certificate below ₹2,50,000\n• Free-ship Card from Dr. Ambedkar Scholarship Portal\n• Aadhaar Card linked to bank account",

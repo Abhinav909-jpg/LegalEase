@@ -31,123 +31,112 @@ export default function ChatWindow() {
   const [language, setLanguage] = useState('en') // 'en', 'hi', 'pa'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [isRecording, setIsRecording] = useState(false)
-  const [recordSeconds, setRecordSeconds] = useState(0)
+  const [isListening, setIsListening] = useState(false)
   const [speechError, setSpeechError] = useState(null)
-  const mediaRecorderRef = useRef(null)
-  const audioChunksRef = useRef([])
-  const timerIntervalRef = useRef(null)
+  const recognitionRef = useRef(null)
   const messagesEndRef = useRef(null)
 
-  // Start Physical Audio Recording (100% immune to Google Speech server blocks)
-  const startRecording = async () => {
+  // Real-time Voice to Text Engine (SpeechRecognition)
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch (e) {}
+    }
+    setIsListening(false)
+  }
+
+  const startListening = () => {
     setSpeechError(null)
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+
+    if (!SpeechRecognition) {
+      setSpeechError('Voice-to-text is not supported in this browser. Please open in Google Chrome or Microsoft Edge.')
+      return
+    }
+
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setSpeechError('Microphone recording is not supported in this browser. Please use Chrome, Edge, or Safari.')
-        return
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort() } catch (e) {}
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream)
-      audioChunksRef.current = []
+      // Always instantiate fresh session to prevent Chromium WebSocket/InvalidState locks
+      const recognition = new SpeechRecognition()
+      recognition.continuous = false
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
 
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          audioChunksRef.current.push(e.data)
-        }
-      }
-
-      recorder.onstart = () => {
-        setIsRecording(true)
-        setRecordSeconds(0)
-        timerIntervalRef.current = setInterval(() => {
-          setRecordSeconds(prev => prev + 1)
-        }, 1000)
-      }
-
-      recorder.onstop = async () => {
-        setIsRecording(false)
-        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
-        
-        // Stop all audio tracks
-        stream.getTracks().forEach(track => track.stop())
-
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        if (audioBlob.size > 0) {
-          await handleSendVoice(audioBlob)
-        }
-      }
-
-      mediaRecorderRef.current = recorder
-      recorder.start()
-    } catch (err) {
-      console.warn("Microphone access error:", err)
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setSpeechError('Microphone permission was denied. Please click the lock 🔒 icon in your browser URL bar and allow Microphone.')
+      // Auto-configure optimal speech locale
+      if (language === 'hi') {
+        recognition.lang = 'hi-IN'
+      } else if (language === 'pa') {
+        recognition.lang = 'pa-IN'
       } else {
-        setSpeechError(`Could not access microphone: ${err.message || err.name}`)
-      }
-    }
-  }
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      try {
-        mediaRecorderRef.current.stop()
-      } catch (e) {}
-    }
-  }
-
-  const cancelRecording = () => {
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
-    if (mediaRecorderRef.current) {
-      try {
-        mediaRecorderRef.current.stream?.getTracks().forEach(t => t.stop())
-      } catch (e) {}
-    }
-    setIsRecording(false)
-    setRecordSeconds(0)
-  }
-
-  const handleSendVoice = async (audioBlob) => {
-    setLoading(true)
-    setError(null)
-
-    const tempUserMsg = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: '🎙️ Spoken Voice Query (Audio Transcribing...)',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
-    setMessages(prev => [...prev, tempUserMsg])
-
-    try {
-      const data = await sendVoiceMessage(audioBlob, language)
-      
-      // Update with the transcribed query
-      setMessages(prev => prev.map(m => 
-        m.id === tempUserMsg.id 
-          ? { ...m, content: `🎙️ "${data.transcribed_question || 'Spoken Question'}"` }
-          : m
-      ))
-
-      const assistantMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.answer,
-        citations: data.citations || [],
-        confidence: data.confidence || 'high',
-        suggested_follow_ups: data.suggested_follow_ups || [],
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        recognition.lang = navigator.language || 'en-IN'
       }
 
-      setMessages(prev => [...prev, assistantMessage])
+      recognition.onstart = () => {
+        setIsListening(true)
+        setSpeechError(null)
+      }
+
+      recognition.onresult = (event) => {
+        let interimText = ''
+        let finalText = ''
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalText += event.results[i][0].transcript
+          } else {
+            interimText += event.results[i][0].transcript
+          }
+        }
+        const text = (finalText || interimText).trim()
+        if (text) {
+          setInput(text)
+        }
+      }
+
+      recognition.onerror = (event) => {
+        console.warn('Speech recognition error event:', event.error)
+        setIsListening(false)
+        if (event.error === 'network') {
+          setSpeechError(
+            "Your network firewall or browser blocked Google's speech service. You can use Microsoft Edge, click any voice question below to test hands-free, or type directly."
+          )
+        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setSpeechError('Microphone permission denied. Please click the lock 🔒 icon next to the URL bar and allow Microphone.')
+        } else if (event.error === 'no-speech') {
+          // User paused or didn't speak
+        } else if (event.error !== 'aborted') {
+          setSpeechError(`Voice notice: ${event.error}`)
+        }
+      }
+
+      recognition.onend = () => {
+        setIsListening(false)
+      }
+
+      recognitionRef.current = recognition
+      recognition.start()
     } catch (err) {
-      setError(err.message || 'Error processing voice recording.')
-    } finally {
-      setLoading(false)
+      console.warn('Failed to start speech recognition:', err)
+      setIsListening(false)
+      setSpeechError(`Could not access microphone: ${err.message || 'Check browser permissions'}`)
     }
+  }
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening()
+    } else {
+      startListening()
+    }
+  }
+
+  const handleVoiceQuery = (questionText) => {
+    setInput(questionText)
+    setSpeechError(null)
+    handleSend(questionText)
   }
 
   const scrollToBottom = () => {
@@ -359,9 +348,9 @@ export default function ChatWindow() {
 
       {/* Input Bar */}
       <div className="p-4 bg-slate-50 border-t border-slate-200">
-        {/* Active Audio Recording Bar */}
-        {isRecording && (
-          <div className="flex items-center justify-between gap-3 mb-3 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-red-900 shadow-sm animate-pulse">
+        {/* Active Listening Indicator */}
+        {isListening && (
+          <div className="flex items-center justify-between gap-3 mb-3 px-4 py-2.5 bg-brand-50 border border-brand-200 rounded-xl text-brand-900 shadow-sm animate-pulse">
             <div className="flex items-center gap-2.5">
               <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -369,46 +358,58 @@ export default function ChatWindow() {
               </span>
               <span className="font-semibold text-xs sm:text-sm">
                 {language === 'hi'
-                  ? `आवाज रिकॉर्ड हो रही है... 00:${recordSeconds.toString().padStart(2, '0')}`
+                  ? 'सुन रहे हैं... कृपया छात्रवृत्ति या योजना के बारे में बोलें (आवाज से टेक्स्ट लिखा जा रहा है)'
                   : language === 'pa'
-                  ? `ਆਵਾਜ਼ ਰਿਕਾਰਡ ਹੋ ਰਹੀ ਹੈ... 00:${recordSeconds.toString().padStart(2, '0')}`
-                  : `Recording Voice Query... 00:${recordSeconds.toString().padStart(2, '0')}`}
+                  ? 'ਸੁਣ ਰਹੇ ਹਾਂ... ਕਿਰਪਾ ਕਰਕੇ ਸਕੀਮ ਬਾਰੇ ਬੋਲੋ (ਟਾਈਪ ਹੋ ਰਿਹਾ ਹੈ)'
+                  : 'Listening... Speak your query (transcribing live into text)'}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={cancelRecording}
-                className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-300 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={stopRecording}
-                className="px-3 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-xs flex items-center gap-1 transition-colors"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>Finish & Send</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={stopListening}
+              className="px-3 py-1 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-xs transition-colors"
+            >
+              Done
+            </button>
           </div>
         )}
 
         {speechError && (
-          <div className="mb-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 shadow-sm">
-            <div className="flex items-center justify-between font-semibold">
+          <div className="mb-3 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 shadow-sm">
+            <div className="flex items-center justify-between font-semibold mb-1.5">
               <span className="flex items-center gap-1.5 text-amber-800">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>{speechError}</span>
+                <span>Voice Notice: {speechError}</span>
               </span>
               <button 
                 type="button" 
                 onClick={() => setSpeechError(null)} 
-                className="text-amber-600 hover:text-amber-800 font-bold text-sm ml-2"
+                className="text-amber-600 hover:text-amber-800 font-bold text-base ml-2 leading-none"
               >
                 ×
               </button>
+            </div>
+            <p className="text-[11px] text-amber-700 mb-2">
+              You can test instantly hands-free by clicking any verified voice question below:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "What is the parental income limit for Central Sector Scholarship?",
+                "What are the required documents for Post Matric Scholarship for SC in Punjab?",
+                "How do I apply for the PM-YASASVI scholarship scheme?",
+                "What is the scholarship amount for Graduation under PM-USP?",
+                "What is the eligibility for National Means-cum-Merit Scholarship (NMMSS)?",
+                "How can I get a Free-ship Card in Punjab?"
+              ].map((sampleQ, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleVoiceQuery(sampleQ)}
+                  className="text-[11px] bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 px-2.5 py-1 rounded-lg transition-colors font-medium text-left shadow-2xs"
+                >
+                  🎙️ "{sampleQ}"
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -432,17 +433,17 @@ export default function ChatWindow() {
           {/* Voice to Text Button */}
           <button
             type="button"
-            onClick={isRecording ? stopRecording : startRecording}
+            onClick={toggleListening}
             disabled={loading}
             className={`p-2.5 rounded-lg transition-all shrink-0 ${
-              isRecording
+              isListening
                 ? 'bg-red-600 text-white animate-pulse shadow-md shadow-red-200 ring-2 ring-red-400'
                 : 'text-slate-500 hover:text-brand-600 hover:bg-slate-100'
             }`}
-            title={isRecording ? "Recording in progress... Click to stop & send" : "Speak query (Microphone)"}
+            title={isListening ? "Listening... Click to stop" : "Speak query (Voice-to-Text)"}
           >
-            {isRecording ? (
-              <Square className="w-4 h-4 text-white fill-white" />
+            {isListening ? (
+              <MicOff className="w-4 h-4 text-white" />
             ) : (
               <Mic className="w-4 h-4" />
             )}
@@ -464,12 +465,14 @@ export default function ChatWindow() {
           {[
             "What is the parental income limit for Central Sector Scholarship?",
             "What are the required documents for Post Matric Scholarship for SC in Punjab?",
-            "How do I apply for the PM-YASASVI scholarship scheme?"
+            "How do I apply for the PM-YASASVI scholarship scheme?",
+            "What is the scholarship amount for Graduation under PM-USP?",
+            "How can I get a Free-ship Card in Punjab?"
           ].map((sampleQ, idx) => (
             <button
               key={idx}
               type="button"
-              onClick={() => handleSend(sampleQ)}
+              onClick={() => handleVoiceQuery(sampleQ)}
               className="text-[11px] bg-white border border-slate-200 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 text-slate-600 px-2 py-0.5 rounded-lg transition-all shadow-2xs"
             >
               🎙️ "{sampleQ}"
