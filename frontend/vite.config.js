@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Use relative base path for seamless GitHub Pages deployment under any repository name
-  base: './',
+  // Exact GitHub repository name base for GitHub Pages
+  base: process.env.VITE_BASE || '/Sathack_winners/',
   server: {
     port: 5173,
     proxy: {
