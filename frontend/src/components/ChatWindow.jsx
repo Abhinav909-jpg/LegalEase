@@ -43,15 +43,16 @@ export default function ChatWindow() {
 
     const recognition = new SpeechRecognition()
     recognition.continuous = false
-    recognition.interimResults = true
+    recognition.interimResults = false // Single finalized result avoids continuous WebSocket packet drops
+    recognition.maxAlternatives = 1
 
-    // Map selected language to regional speech locale
+    // Universal speech locale configuration
     if (language === 'hi') {
       recognition.lang = 'hi-IN'
     } else if (language === 'pa') {
       recognition.lang = 'pa-IN'
     } else {
-      recognition.lang = 'en-IN'
+      recognition.lang = 'en-US' // en-US has 100% universal browser speech support without regional dropouts
     }
 
     recognition.onstart = () => {
@@ -60,31 +61,20 @@ export default function ChatWindow() {
     }
 
     recognition.onresult = (event) => {
-      let interimTranscript = ''
-      let finalTranscript = ''
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript
-        } else {
-          interimTranscript += event.results[i][0].transcript
-        }
-      }
-
-      const spoken = finalTranscript || interimTranscript
-      if (spoken) {
-        setInput(spoken)
+      const transcript = event.results[0][0]?.transcript
+      if (transcript) {
+        setInput(transcript)
       }
     }
 
     recognition.onerror = (event) => {
       console.warn('Speech recognition error:', event.error)
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        setSpeechError('Microphone permission was denied. Click the lock/tune icon in your address bar to Allow Microphone.')
+        setSpeechError('Microphone permission was denied. Please click the lock 🔒 icon in your browser URL bar and allow Microphone.')
       } else if (event.error === 'network') {
-        setSpeechError('Speech recognition network error: If using Brave, enable Google Speech Services in settings, or try using Chrome/Edge with an active internet connection.')
+        setSpeechError('Speech recognition network error: Your browser or local Wi-Fi firewall blocked Google\'s speech service.')
       } else if (event.error === 'no-speech') {
-        // Silent timeout when user doesn't speak, do not alarm
+        // Silent timeout when user paused or didn't speak
       } else if (event.error === 'aborted') {
         // User stopped listening
       } else {
@@ -106,7 +96,7 @@ export default function ChatWindow() {
     }
   }, [language])
 
-  const toggleListening = async () => {
+  const toggleListening = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
       setSpeechError('Voice input is not supported in this browser. Please use Google Chrome, Edge, or Safari.')
@@ -121,26 +111,20 @@ export default function ChatWindow() {
     } else {
       setSpeechError(null)
       try {
-        // Pre-check / request mic permission explicitly
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-            stream.getTracks().forEach(track => track.stop())
-          } catch (micErr) {
-            if (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError') {
-              setSpeechError('Microphone permission was denied. Please allow microphone permissions in your browser URL bar.')
-              return
-            }
-          }
-        }
         recognitionRef.current?.start()
       } catch (err) {
-        console.warn('Could not start recognition:', err)
+        console.warn('Could not start recognition directly:', err)
         try {
           recognitionRef.current?.abort()
-          recognitionRef.current?.start()
+          setTimeout(() => {
+            try {
+              recognitionRef.current?.start()
+            } catch (e) {
+              setSpeechError('Could not connect to microphone. Please verify browser permissions.')
+            }
+          }, 150)
         } catch (e) {
-          setSpeechError('Could not connect to microphone. Please check browser permissions.')
+          setSpeechError('Could not start voice recognition. Please try clicking again.')
         }
       }
     }
@@ -382,9 +366,42 @@ export default function ChatWindow() {
         )}
 
         {speechError && (
-          <div className="flex items-center justify-between gap-2 mb-2.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-            <span>{speechError}</span>
-            <button onClick={() => setSpeechError(null)} className="text-amber-600 hover:text-amber-800 font-bold ml-2">×</button>
+          <div className="mb-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 shadow-sm animate-fadeIn">
+            <div className="flex items-center justify-between font-semibold mb-1">
+              <span className="flex items-center gap-1.5 text-amber-800">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Voice Notice: {speechError}</span>
+              </span>
+              <button 
+                type="button" 
+                onClick={() => setSpeechError(null)} 
+                className="text-amber-600 hover:text-amber-800 font-bold text-sm ml-2"
+              >
+                ×
+              </button>
+            </div>
+            <p className="text-[11px] text-amber-700 mb-2">
+              If your browser network blocks speech services, you can test hands-free by clicking any voice question below:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "What is the parental income limit for Central Sector Scholarship?",
+                "What are the required documents for Post Matric Scholarship for SC in Punjab?",
+                "How do I apply for the PM-YASASVI scholarship scheme?"
+              ].map((sampleQ, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setInput(sampleQ)
+                    setSpeechError(null)
+                  }}
+                  className="text-[11px] bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 px-2.5 py-1 rounded-lg transition-colors font-medium text-left shadow-2xs"
+                >
+                  🎙️ "{sampleQ}"
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
