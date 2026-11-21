@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Search, Filter, Bookmark, BookOpen, FileCheck, CheckCircle2, ChevronRight, Clock, ShieldCheck, ArrowRight } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { Search, Filter, Bookmark, BookOpen, FileCheck, CheckCircle2, ChevronRight, Clock, ShieldCheck, ArrowRight, Mic, MicOff } from 'lucide-react'
 import SchemeCard from '../components/SchemeCard'
 
 const STATES_FILTER = ["All", "Punjab", "All India"]
@@ -17,6 +17,55 @@ export default function Dashboard({
   const [selectedState, setSelectedState] = useState('All')
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [tab, setTab] = useState('all') // 'all' or 'saved'
+  const [isListening, setIsListening] = useState(false)
+  const searchRecognitionRef = useRef(null)
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) return
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous = false
+    recognition.interimResults = true
+    recognition.lang = 'en-IN'
+
+    recognition.onstart = () => setIsListening(true)
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map(result => result[0].transcript)
+        .join('')
+      if (transcript) setSearch(transcript)
+    }
+    recognition.onerror = () => setIsListening(false)
+    recognition.onend = () => setIsListening(false)
+
+    searchRecognitionRef.current = recognition
+    return () => {
+      try { recognition.abort() } catch (e) {}
+    }
+  }, [])
+
+  const toggleVoiceSearch = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert('Voice search is supported in Google Chrome, Edge, and Safari.')
+      return
+    }
+
+    if (isListening) {
+      try { searchRecognitionRef.current?.stop() } catch (e) {}
+      setIsListening(false)
+    } else {
+      try {
+        searchRecognitionRef.current?.start()
+      } catch (e) {
+        try {
+          searchRecognitionRef.current?.abort()
+          searchRecognitionRef.current?.start()
+        } catch (err) {}
+      }
+    }
+  }
 
   // Application tracker step mock
   const [activeStage, setActiveStage] = useState(2)
@@ -175,16 +224,28 @@ export default function Dashboard({
             </button>
           </div>
 
-          {/* Search box */}
-          <div className="relative w-full sm:w-72">
+          {/* Search box with Voice-to-Text */}
+          <div className="relative w-full sm:w-80">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search scheme name, ministry..."
-              className="w-full text-xs pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+              placeholder={isListening ? "Listening... Speak scheme name..." : "Search scheme name, ministry..."}
+              className={`w-full text-xs pl-9 pr-9 py-2 rounded-xl border focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white transition-all ${
+                isListening ? 'border-rose-400 ring-2 ring-rose-200' : 'border-slate-200'
+              }`}
             />
+            <button
+              type="button"
+              onClick={toggleVoiceSearch}
+              className={`absolute right-2.5 top-2 p-1 rounded-md transition-colors ${
+                isListening ? 'text-rose-600 bg-rose-50 animate-pulse' : 'text-slate-400 hover:text-brand-600'
+              }`}
+              title={isListening ? "Listening... Click to stop" : "Search by voice"}
+            >
+              {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+            </button>
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Globe, Bot, User, Sparkles, AlertCircle, RefreshCw, Loader2, ShieldCheck, ChevronRight } from 'lucide-react'
+import { Send, Globe, Bot, User, Sparkles, AlertCircle, RefreshCw, Loader2, ShieldCheck, ChevronRight, Mic, MicOff } from 'lucide-react'
 import SourceCitation from './SourceCitation'
 import { sendChatMessage } from '../services/api'
 
@@ -31,7 +31,100 @@ export default function ChatWindow() {
   const [language, setLanguage] = useState('en') // 'en', 'hi', 'pa'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [isListening, setIsListening] = useState(false)
+  const [speechError, setSpeechError] = useState(null)
+  const recognitionRef = useRef(null)
   const messagesEndRef = useRef(null)
+
+  // Web Speech API Voice-to-Text Initialization
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) return
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous = false
+    recognition.interimResults = true
+
+    // Map selected language to regional speech locale
+    if (language === 'hi') {
+      recognition.lang = 'hi-IN'
+    } else if (language === 'pa') {
+      recognition.lang = 'pa-IN'
+    } else {
+      recognition.lang = 'en-IN'
+    }
+
+    recognition.onstart = () => {
+      setIsListening(true)
+      setSpeechError(null)
+    }
+
+    recognition.onresult = (event) => {
+      let interimTranscript = ''
+      let finalTranscript = ''
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript
+        } else {
+          interimTranscript += event.results[i][0].transcript
+        }
+      }
+
+      const spoken = finalTranscript || interimTranscript
+      if (spoken) {
+        setInput(spoken)
+      }
+    }
+
+    recognition.onerror = (event) => {
+      if (event.error === 'not-allowed') {
+        setSpeechError('Microphone permission was denied. Please allow microphone access in your browser settings.')
+      } else if (event.error === 'no-speech') {
+        // No speech detected, ignore smoothly
+      } else {
+        setSpeechError(`Voice input error: ${event.error}`)
+      }
+      setIsListening(false)
+    }
+
+    recognition.onend = () => {
+      setIsListening(false)
+    }
+
+    recognitionRef.current = recognition
+
+    return () => {
+      try {
+        recognition.abort()
+      } catch (e) {}
+    }
+  }, [language])
+
+  const toggleListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setSpeechError('Voice input is not supported in this browser. Please use Google Chrome, Edge, or Safari.')
+      return
+    }
+
+    if (isListening) {
+      try {
+        recognitionRef.current?.stop()
+      } catch (e) {}
+      setIsListening(false)
+    } else {
+      setSpeechError(null)
+      try {
+        recognitionRef.current?.start()
+      } catch (err) {
+        try {
+          recognitionRef.current?.abort()
+          recognitionRef.current?.start()
+        } catch (e) {}
+      }
+    }
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -242,6 +335,39 @@ export default function ChatWindow() {
 
       {/* Input Bar */}
       <div className="p-4 bg-slate-50 border-t border-slate-200">
+        {/* Active Speech Recognition Banner */}
+        {isListening && (
+          <div className="flex items-center justify-between gap-2 mb-2.5 px-3.5 py-2 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 shadow-sm animate-pulse">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
+              </span>
+              <span className="font-semibold">
+                {language === 'hi'
+                  ? 'सुन रहे हैं... कृपया छात्रवृत्ति या योजना के बारे में बोलें'
+                  : language === 'pa'
+                  ? 'ਸੁਣ ਰਹੇ ਹਾਂ... ਕਿਰਪਾ ਕਰਕੇ ਸਕੀਮ ਜਾਂ ਸਕਾਲਰਸ਼ਿਪ ਬਾਰੇ ਬੋਲੋ'
+                  : 'Listening... Speak your scholarship or scheme question now'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={toggleListening}
+              className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-rose-100 hover:bg-rose-200 px-2.5 py-0.5 rounded-md transition-colors"
+            >
+              Stop
+            </button>
+          </div>
+        )}
+
+        {speechError && (
+          <div className="flex items-center justify-between gap-2 mb-2.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            <span>{speechError}</span>
+            <button onClick={() => setSpeechError(null)} className="text-amber-600 hover:text-amber-800 font-bold ml-2">×</button>
+          </div>
+        )}
+
         <div className="flex items-end gap-2 bg-white rounded-xl border border-slate-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200 p-2 transition-all">
           <textarea
             value={input}
@@ -249,14 +375,33 @@ export default function ChatWindow() {
             onKeyDown={handleKeyDown}
             placeholder={
               language === 'hi'
-                ? "सरकारी छात्रवृत्ति या योजना के बारे में पूछें..."
+                ? "सरकारी छात्रवृत्ति या योजना के बारे में पूछें या माइक दबाकर बोलें..."
                 : language === 'pa'
-                ? "ਸਰਕਾਰੀ ਸਕੀਮ ਜਾਂ ਸਕਾਲਰਸ਼ਿਪ ਬਾਰੇ ਪੁੱਛੋ..."
-                : "Ask about eligibility, documents, or deadlines for any official scheme..."
+                ? "ਸਰਕਾਰੀ ਸਕੀਮ ਜਾਂ ਸਕਾਲਰਸ਼ਿਪ ਬਾਰੇ ਪੁੱਛੋ ਜਾਂ ਮਾਈਕ ਦਬਾ ਕੇ ਬੋਲੋ..."
+                : "Ask about eligibility, documents, or deadlines (or click mic to speak)..."
             }
             rows={1}
             className="flex-1 resize-none text-xs sm:text-sm px-2 py-1.5 focus:outline-none text-slate-800 placeholder:text-slate-400 max-h-32"
           />
+
+          {/* Voice to Text Button */}
+          <button
+            type="button"
+            onClick={toggleListening}
+            disabled={loading}
+            className={`p-2.5 rounded-lg transition-all shrink-0 ${
+              isListening
+                ? 'bg-rose-600 text-white animate-pulse shadow-md shadow-rose-200 ring-2 ring-rose-400'
+                : 'text-slate-500 hover:text-brand-600 hover:bg-slate-100'
+            }`}
+            title={isListening ? "Listening... Click to stop" : "Speak query (Voice-to-Text)"}
+          >
+            {isListening ? (
+              <MicOff className="w-4 h-4 text-white" />
+            ) : (
+              <Mic className="w-4 h-4" />
+            )}
+          </button>
 
           <button
             onClick={() => handleSend()}
