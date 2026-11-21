@@ -1,20 +1,7 @@
-import React, { useState, useEffect } from 'react'
-import { ShieldCheck, UploadCloud, MessageSquare, Compass, CheckCircle2, Home, LayoutDashboard, Sparkles, BookOpen } from 'lucide-react'
-import { checkHealth } from '../services/api'
+import React from 'react'
+import { ShieldCheck, UploadCloud, MessageSquare, Compass, Home, LayoutDashboard } from 'lucide-react'
 
 export default function Navbar({ activePage, setActivePage, onOpenUpload }) {
-  const [backendHealthy, setBackendHealthy] = useState(false)
-
-  useEffect(() => {
-    checkHealth()
-      .then(data => {
-        if (data && data.status === 'healthy') {
-          setBackendHealthy(true)
-        }
-      })
-      .catch(() => setBackendHealthy(false))
-  }, [])
-
   return (
     <nav className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -30,9 +17,6 @@ export default function Navbar({ activePage, setActivePage, onOpenUpload }) {
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="text-lg font-extrabold text-slate-900 tracking-tight">Legal<span className="text-brand-600">Ease</span></span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200">
-                  AI RAG
-                </span>
               </div>
               <p className="text-[10px] text-slate-400 font-medium">National Scheme & Scholarship Navigator</p>
             </div>
@@ -100,11 +84,6 @@ export default function Navbar({ activePage, setActivePage, onOpenUpload }) {
               <UploadCloud className="w-3.5 h-3.5 text-brand-600" />
               <span className="hidden sm:inline">Upload PDF</span>
             </button>
-
-            <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 text-[11px] font-medium text-slate-500">
-              <span className={`w-2 h-2 rounded-full ${backendHealthy ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-              <span className="hidden lg:inline">{backendHealthy ? 'Official API Live' : 'Connecting...'}</span>
-            </div>
           </div>
         </div>
       </div>
