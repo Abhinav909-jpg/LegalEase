@@ -45,7 +45,7 @@ export default function Dashboard({
     }
   }, [])
 
-  const toggleVoiceSearch = () => {
+  const toggleVoiceSearch = async () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
       alert('Voice search is supported in Google Chrome, Edge, and Safari.')
@@ -57,6 +57,12 @@ export default function Dashboard({
       setIsListening(false)
     } else {
       try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            stream.getTracks().forEach(track => track.stop())
+          } catch (micErr) {}
+        }
         searchRecognitionRef.current?.start()
       } catch (e) {
         try {

@@ -78,12 +78,17 @@ export default function ChatWindow() {
     }
 
     recognition.onerror = (event) => {
-      if (event.error === 'not-allowed') {
-        setSpeechError('Microphone permission was denied. Please allow microphone access in your browser settings.')
+      console.warn('Speech recognition error:', event.error)
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        setSpeechError('Microphone permission was denied. Click the lock/tune icon in your address bar to Allow Microphone.')
+      } else if (event.error === 'network') {
+        setSpeechError('Speech recognition network error: If using Brave, enable Google Speech Services in settings, or try using Chrome/Edge with an active internet connection.')
       } else if (event.error === 'no-speech') {
-        // No speech detected, ignore smoothly
+        // Silent timeout when user doesn't speak, do not alarm
+      } else if (event.error === 'aborted') {
+        // User stopped listening
       } else {
-        setSpeechError(`Voice input error: ${event.error}`)
+        setSpeechError(`Voice input notice: ${event.error}`)
       }
       setIsListening(false)
     }
@@ -101,7 +106,7 @@ export default function ChatWindow() {
     }
   }, [language])
 
-  const toggleListening = () => {
+  const toggleListening = async () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
       setSpeechError('Voice input is not supported in this browser. Please use Google Chrome, Edge, or Safari.')
@@ -116,12 +121,27 @@ export default function ChatWindow() {
     } else {
       setSpeechError(null)
       try {
+        // Pre-check / request mic permission explicitly
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            stream.getTracks().forEach(track => track.stop())
+          } catch (micErr) {
+            if (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError') {
+              setSpeechError('Microphone permission was denied. Please allow microphone permissions in your browser URL bar.')
+              return
+            }
+          }
+        }
         recognitionRef.current?.start()
       } catch (err) {
+        console.warn('Could not start recognition:', err)
         try {
           recognitionRef.current?.abort()
           recognitionRef.current?.start()
-        } catch (e) {}
+        } catch (e) {
+          setSpeechError('Could not connect to microphone. Please check browser permissions.')
+        }
       }
     }
   }
