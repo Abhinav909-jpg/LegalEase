@@ -1,0 +1,1 @@
+"""SchemeSathi Backend Application Package"""
