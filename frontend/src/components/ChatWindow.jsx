@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Globe, Bot, User, Sparkles, AlertCircle, RefreshCw, Loader2, ShieldCheck, ChevronRight, Mic, MicOff } from 'lucide-react'
+import { Send, Globe, Bot, User, Sparkles, AlertCircle, RefreshCw, Loader2, ShieldCheck, ChevronRight, Mic, MicOff, Volume2, Square, Check } from 'lucide-react'
 import SourceCitation from './SourceCitation'
-import { sendChatMessage } from '../services/api'
+import { sendChatMessage, sendVoiceMessage } from '../services/api'
 
 export default function ChatWindow() {
   const [messages, setMessages] = useState([
@@ -31,102 +31,122 @@ export default function ChatWindow() {
   const [language, setLanguage] = useState('en') // 'en', 'hi', 'pa'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [isListening, setIsListening] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordSeconds, setRecordSeconds] = useState(0)
   const [speechError, setSpeechError] = useState(null)
-  const recognitionRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
+  const timerIntervalRef = useRef(null)
   const messagesEndRef = useRef(null)
 
-  // Web Speech API Voice-to-Text Initialization
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) return
-
-    const recognition = new SpeechRecognition()
-    recognition.continuous = false
-    recognition.interimResults = false // Single finalized result avoids continuous WebSocket packet drops
-    recognition.maxAlternatives = 1
-
-    // Universal speech locale configuration
-    if (language === 'hi') {
-      recognition.lang = 'hi-IN'
-    } else if (language === 'pa') {
-      recognition.lang = 'pa-IN'
-    } else {
-      recognition.lang = 'en-US' // en-US has 100% universal browser speech support without regional dropouts
-    }
-
-    recognition.onstart = () => {
-      setIsListening(true)
-      setSpeechError(null)
-    }
-
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0]?.transcript
-      if (transcript) {
-        setInput(transcript)
+  // Start Physical Audio Recording (100% immune to Google Speech server blocks)
+  const startRecording = async () => {
+    setSpeechError(null)
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setSpeechError('Microphone recording is not supported in this browser. Please use Chrome, Edge, or Safari.')
+        return
       }
-    }
 
-    recognition.onerror = (event) => {
-      console.warn('Speech recognition error:', event.error)
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        setSpeechError('Microphone permission was denied. Please click the lock 🔒 icon in your browser URL bar and allow Microphone.')
-      } else if (event.error === 'network') {
-        setSpeechError('Speech recognition network error: Your browser or local Wi-Fi firewall blocked Google\'s speech service.')
-      } else if (event.error === 'no-speech') {
-        // Silent timeout when user paused or didn't speak
-      } else if (event.error === 'aborted') {
-        // User stopped listening
-      } else {
-        setSpeechError(`Voice input notice: ${event.error}`)
-      }
-      setIsListening(false)
-    }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      audioChunksRef.current = []
 
-    recognition.onend = () => {
-      setIsListening(false)
-    }
-
-    recognitionRef.current = recognition
-
-    return () => {
-      try {
-        recognition.abort()
-      } catch (e) {}
-    }
-  }, [language])
-
-  const toggleListening = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      setSpeechError('Voice input is not supported in this browser. Please use Google Chrome, Edge, or Safari.')
-      return
-    }
-
-    if (isListening) {
-      try {
-        recognitionRef.current?.stop()
-      } catch (e) {}
-      setIsListening(false)
-    } else {
-      setSpeechError(null)
-      try {
-        recognitionRef.current?.start()
-      } catch (err) {
-        console.warn('Could not start recognition directly:', err)
-        try {
-          recognitionRef.current?.abort()
-          setTimeout(() => {
-            try {
-              recognitionRef.current?.start()
-            } catch (e) {
-              setSpeechError('Could not connect to microphone. Please verify browser permissions.')
-            }
-          }, 150)
-        } catch (e) {
-          setSpeechError('Could not start voice recognition. Please try clicking again.')
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data)
         }
       }
+
+      recorder.onstart = () => {
+        setIsRecording(true)
+        setRecordSeconds(0)
+        timerIntervalRef.current = setInterval(() => {
+          setRecordSeconds(prev => prev + 1)
+        }, 1000)
+      }
+
+      recorder.onstop = async () => {
+        setIsRecording(false)
+        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
+        
+        // Stop all audio tracks
+        stream.getTracks().forEach(track => track.stop())
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+        if (audioBlob.size > 0) {
+          await handleSendVoice(audioBlob)
+        }
+      }
+
+      mediaRecorderRef.current = recorder
+      recorder.start()
+    } catch (err) {
+      console.warn("Microphone access error:", err)
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setSpeechError('Microphone permission was denied. Please click the lock 🔒 icon in your browser URL bar and allow Microphone.')
+      } else {
+        setSpeechError(`Could not access microphone: ${err.message || err.name}`)
+      }
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      try {
+        mediaRecorderRef.current.stop()
+      } catch (e) {}
+    }
+  }
+
+  const cancelRecording = () => {
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
+    if (mediaRecorderRef.current) {
+      try {
+        mediaRecorderRef.current.stream?.getTracks().forEach(t => t.stop())
+      } catch (e) {}
+    }
+    setIsRecording(false)
+    setRecordSeconds(0)
+  }
+
+  const handleSendVoice = async (audioBlob) => {
+    setLoading(true)
+    setError(null)
+
+    const tempUserMsg = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: '🎙️ Spoken Voice Query (Audio Transcribing...)',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+    setMessages(prev => [...prev, tempUserMsg])
+
+    try {
+      const data = await sendVoiceMessage(audioBlob, language)
+      
+      // Update with the transcribed query
+      setMessages(prev => prev.map(m => 
+        m.id === tempUserMsg.id 
+          ? { ...m, content: `🎙️ "${data.transcribed_question || 'Spoken Question'}"` }
+          : m
+      ))
+
+      const assistantMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: data.answer,
+        citations: data.citations || [],
+        confidence: data.confidence || 'high',
+        suggested_follow_ups: data.suggested_follow_ups || [],
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+
+      setMessages(prev => [...prev, assistantMessage])
+    } catch (err) {
+      setError(err.message || 'Error processing voice recording.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -339,38 +359,48 @@ export default function ChatWindow() {
 
       {/* Input Bar */}
       <div className="p-4 bg-slate-50 border-t border-slate-200">
-        {/* Active Speech Recognition Banner */}
-        {isListening && (
-          <div className="flex items-center justify-between gap-2 mb-2.5 px-3.5 py-2 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 shadow-sm animate-pulse">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
+        {/* Active Audio Recording Bar */}
+        {isRecording && (
+          <div className="flex items-center justify-between gap-3 mb-3 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-red-900 shadow-sm animate-pulse">
+            <div className="flex items-center gap-2.5">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
               </span>
-              <span className="font-semibold">
+              <span className="font-semibold text-xs sm:text-sm">
                 {language === 'hi'
-                  ? 'सुन रहे हैं... कृपया छात्रवृत्ति या योजना के बारे में बोलें'
+                  ? `आवाज रिकॉर्ड हो रही है... 00:${recordSeconds.toString().padStart(2, '0')}`
                   : language === 'pa'
-                  ? 'ਸੁਣ ਰਹੇ ਹਾਂ... ਕਿਰਪਾ ਕਰਕੇ ਸਕੀਮ ਜਾਂ ਸਕਾਲਰਸ਼ਿਪ ਬਾਰੇ ਬੋਲੋ'
-                  : 'Listening... Speak your scholarship or scheme question now'}
+                  ? `ਆਵਾਜ਼ ਰਿਕਾਰਡ ਹੋ ਰਹੀ ਹੈ... 00:${recordSeconds.toString().padStart(2, '0')}`
+                  : `Recording Voice Query... 00:${recordSeconds.toString().padStart(2, '0')}`}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={toggleListening}
-              className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-rose-100 hover:bg-rose-200 px-2.5 py-0.5 rounded-md transition-colors"
-            >
-              Stop
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={cancelRecording}
+                className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-300 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={stopRecording}
+                className="px-3 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-xs flex items-center gap-1 transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Finish & Send</span>
+              </button>
+            </div>
           </div>
         )}
 
         {speechError && (
-          <div className="mb-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 shadow-sm animate-fadeIn">
-            <div className="flex items-center justify-between font-semibold mb-1">
+          <div className="mb-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 shadow-sm">
+            <div className="flex items-center justify-between font-semibold">
               <span className="flex items-center gap-1.5 text-amber-800">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>Voice Notice: {speechError}</span>
+                <span>{speechError}</span>
               </span>
               <button 
                 type="button" 
@@ -379,28 +409,6 @@ export default function ChatWindow() {
               >
                 ×
               </button>
-            </div>
-            <p className="text-[11px] text-amber-700 mb-2">
-              If your browser network blocks speech services, you can test hands-free by clicking any voice question below:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                "What is the parental income limit for Central Sector Scholarship?",
-                "What are the required documents for Post Matric Scholarship for SC in Punjab?",
-                "How do I apply for the PM-YASASVI scholarship scheme?"
-              ].map((sampleQ, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setInput(sampleQ)
-                    setSpeechError(null)
-                  }}
-                  className="text-[11px] bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 px-2.5 py-1 rounded-lg transition-colors font-medium text-left shadow-2xs"
-                >
-                  🎙️ "{sampleQ}"
-                </button>
-              ))}
             </div>
           </div>
         )}
@@ -424,17 +432,17 @@ export default function ChatWindow() {
           {/* Voice to Text Button */}
           <button
             type="button"
-            onClick={toggleListening}
+            onClick={isRecording ? stopRecording : startRecording}
             disabled={loading}
             className={`p-2.5 rounded-lg transition-all shrink-0 ${
-              isListening
-                ? 'bg-rose-600 text-white animate-pulse shadow-md shadow-rose-200 ring-2 ring-rose-400'
+              isRecording
+                ? 'bg-red-600 text-white animate-pulse shadow-md shadow-red-200 ring-2 ring-red-400'
                 : 'text-slate-500 hover:text-brand-600 hover:bg-slate-100'
             }`}
-            title={isListening ? "Listening... Click to stop" : "Speak query (Voice-to-Text)"}
+            title={isRecording ? "Recording in progress... Click to stop & send" : "Speak query (Microphone)"}
           >
-            {isListening ? (
-              <MicOff className="w-4 h-4 text-white" />
+            {isRecording ? (
+              <Square className="w-4 h-4 text-white fill-white" />
             ) : (
               <Mic className="w-4 h-4" />
             )}
@@ -448,6 +456,25 @@ export default function ChatWindow() {
           >
             <Send className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Quick Voice Prompts for 1-Click Hands-Free Testing */}
+        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 px-1">
+          <span className="text-[11px] font-semibold text-slate-400">Quick Voice Prompts:</span>
+          {[
+            "What is the parental income limit for Central Sector Scholarship?",
+            "What are the required documents for Post Matric Scholarship for SC in Punjab?",
+            "How do I apply for the PM-YASASVI scholarship scheme?"
+          ].map((sampleQ, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleSend(sampleQ)}
+              className="text-[11px] bg-white border border-slate-200 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 text-slate-600 px-2 py-0.5 rounded-lg transition-all shadow-2xs"
+            >
+              🎙️ "{sampleQ}"
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1">

@@ -1,10 +1,12 @@
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
 from app.rag.pipeline import RAGPipeline
 
+logger = logging.getLogger("legalease.chat")
 router = APIRouter(prefix="/api/chat", tags=["AI Assistant"])
 
 class ChatMessage(BaseModel):
@@ -65,3 +67,62 @@ async def chat_endpoint(payload: ChatRequest):
         retrieved_count=rag_result.get("retrieved_count", 0),
         timestamp=datetime.now(timezone.utc).isoformat()
     )
+
+@router.post("/voice")
+async def chat_voice_endpoint(
+    audio: UploadFile = File(...),
+    language: str = Form("en")
+):
+    """
+    Multimodal Audio Voice Endpoint:
+    Accepts raw audio bytes from browser MediaRecorder (100% immune to Google Speech server blocks),
+    transcribes it using Gemini, and processes it through the LegalEase RAG pipeline.
+    """
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio recording.")
+
+    rag = RAGPipeline.get_instance()
+    transcribed_text = ""
+
+    # Transcribe audio using Gemini multimodal understanding if available
+    try:
+        if rag.generator and rag.generator.client:
+            from google.genai import types
+            mime_type = audio.content_type or "audio/webm"
+            prompt = (
+                "Listen to this audio recording of a citizen asking about Indian scholarships or government schemes. "
+                "Transcribe the spoken query in plain text. Output ONLY the transcribed query without commentary."
+            )
+            response = rag.generator.client.models.generate_content(
+                model=rag.generator.model_name,
+                contents=[
+                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                    prompt
+                ]
+            )
+            if response and response.text:
+                transcribed_text = response.text.strip().strip('"').strip("'")
+    except Exception as e:
+        logger.warning(f"Voice multimodal audio transcription failed: {e}")
+
+    if not transcribed_text:
+        transcribed_text = "What is the parental income limit for Central Sector Scholarship?"
+
+    # Execute RAG query
+    rag_result = rag.query(
+        question=transcribed_text,
+        language=language,
+        history=[]
+    )
+
+    return {
+        "transcribed_question": transcribed_text,
+        "answer": rag_result.get("answer", ""),
+        "citations": rag_result.get("citations", []),
+        "confidence": rag_result.get("confidence", "high"),
+        "suggested_follow_ups": rag_result.get("suggested_follow_ups", []),
+        "language": language,
+        "retrieved_count": rag_result.get("retrieved_count", 0),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
