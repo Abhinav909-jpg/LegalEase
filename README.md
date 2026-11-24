@@ -1,4 +1,4 @@
-# LegalEase 🇮🇳 (Sathack Winners)
+# LegalEase 🇮🇳 
 ### AI-Powered Government Scheme & Scholarship Navigator for Indian Citizens & Students
 
 LegalEase is a full-stack, production-grade AI platform that empowers Indian citizens and students to discover potentially relevant government schemes, evaluate strict eligibility criteria deterministically, understand required documents, and access authentic application sources with verifiable citations.
