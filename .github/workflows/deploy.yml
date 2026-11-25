@@ -41,7 +41,7 @@ jobs:
 
       - name: Build Frontend for GitHub Pages
         env:
-          VITE_BASE: /Sathack_winners/
+          VITE_BASE: ./
         run: |
           cd frontend
           npm run build

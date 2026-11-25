@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Exact GitHub repository name base for GitHub Pages
-  base: process.env.VITE_BASE || '/Sathack_winners/',
+  // Relative base ensures assets load flawlessly under /LegalEase/ or any GitHub Pages URL
+  base: './',
   server: {
     port: 5173,
     proxy: {
